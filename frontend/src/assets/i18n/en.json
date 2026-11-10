@@ -771,5 +771,15 @@
         "DateAsc": "ascending by date (oldest first)",
         "DateDesc": "descending by date (newest first)",
         "None": "unsorted"
+    },
+    "wio": {
+        "in-collaboration": "In collaboration",
+        "in-collaboration-with": "In collaboration with",
+        "nairobi-convention": "Nairobi Convention",
+        "acknowledgement-contributors": "Contributors",
+        "acknowledgement-thank-you": "Thank you! See list at ",
+        "acknowledgement-1": "Developed in collaboration between the Nairobi Convention, its ten member states, and a Swedish team of government agencies and universities led by the Swedish Agency for Marine and Water Management.",
+        "acknowledgement-2": "Financed by the Swedish Government Offices and Sida, the Swedish International Development Cooperation Agency.",
+        "acknowledgement-3": "Data contributors, thank you! See list at "
     }
 }

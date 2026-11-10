@@ -771,5 +771,15 @@
         "DateAsc": "croissant par date (les plus anciens en premier)",
         "DateDesc": "décroissant par date (les plus récents en premier)",
         "None": "non trié"
+    },
+    "wio": {
+        "in-collaboration": "En collaboration",
+        "in-collaboration-with": "En collaboration avec",
+        "nairobi-convention": "la Convention de Nairobi",
+        "acknowledgement-contributors": "Contributeurs",
+        "acknowledgement-thank-you": "Merci! Voir la liste sur ",
+        "acknowledgement-1": "Développé en collaboration avec la Convention de Nairobi, ses dix États membres et une équipe suédoise composée d'agences gouvernementales et d'universités, sous la direction de l'Agence Suédoise pour la Gestion de l'Eau et des Zones Maritimes.",
+        "acknowledgement-2": "Financé par les services du gouvernement suédois et Sida, l’Agence suédoise de coopération internationale au développement.",
+        "acknowledgement-3": "Contributeurs de données, merci ! Voir la liste sur "
     }
 }

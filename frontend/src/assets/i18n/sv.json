@@ -771,5 +771,15 @@
         "DateAsc": "datum, stigande (äldst först)",
         "DateDesc": "datum, fallande (nyast först)",
         "None": "ej ordnad"
+    },
+    "wio": {
+        "in-collaboration": "I samarbete",
+        "in-collaboration-with": "I samarbete med",
+        "nairobi-convention": "Nairobi Convention",
+        "acknowledgement-contributors": "Deltagare som bidragit,",
+        "acknowledgement-thank-you": "tack! Se lista här: ",
+        "acknowledgement-1": "Utvecklat i samarbete mellan the Nairobi Convention, dess tio medlemsländer och ett svenskt team av myndigheter och universitet under ledning av Havs- och vattenmyndigheten.",
+        "acknowledgement-2": "Finansierat av regeringskansliet och Sida, Styrelsen för internationellt utvecklingssamarbete.",
+        "acknowledgement-3": "Tack till de som bidragit med data. Se lista här: "
     }
 }
