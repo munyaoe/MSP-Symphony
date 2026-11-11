@@ -39,25 +39,34 @@ previous WAR.
 3. **Server-side directories.** `/app/releases/` needs to exist and be
    writable by `DEPLOY_SSH_USER`.
 
+## Confirmed from the first (failed, but harmless) deploy attempt
+
+- **The live app is a managed deployment, not scanner-based.** The
+  first real run tried the filesystem marker protocol (drop a `.war`,
+  touch `.dodeploy`) and WildFly rejected it: `Host and context path
+  are occupied` — the live app is registered under the name
+  `symphony-ws-1.22.0.war` via the management interface (CLI or admin
+  console), and a scanner-dropped file with a different name can't
+  replace it. `jboss-cli.sh --connect --command="deployment-info"`
+  confirmed this works with no authentication prompt. `remote-deploy.sh`
+  now undeploys whatever is currently registered as `symphony-ws*.war`
+  via `jboss-cli` first, then deploys the new WAR under the fixed name
+  `symphony-ws.war`, also via `jboss-cli`. `remote-rollback.sh` matches:
+  it records the previous deployment's name and redeploys it by name on
+  rollback.
+- **Nothing was affected by that failed attempt.** The script exits
+  before touching the frontend symlink or the live deployment if the
+  WildFly pickup check fails, so the site kept serving
+  `symphony-ws-1.22.0.war` throughout. A stray `symphony-ws.war` entry
+  was left registered in a `FAILED` state (harmless, not serving
+  anything) — clean it up once before the next deploy attempt:
+  `jboss-cli.sh --connect --command="undeploy symphony-ws.war"`
+
 ## Open questions to verify before the first real deploy
 
 These are assumptions the scripts make, based on what discovery found;
 please confirm or correct before actually running `deploy.yml`:
 
-- **WildFly deployment-scanner.** `remote-deploy.sh` deploys via the
-  filesystem marker protocol (drop a `.war`, touch `.dodeploy`, wait
-  for `.deployed`). This requires the deployment-scanner subsystem to
-  be enabled in `standalone.xml` (it is by default, but we haven't
-  confirmed it wasn't disabled on this box). If it's disabled, we'd
-  switch to `jboss-cli.sh` with the management interface instead —
-  tell me and I'll adjust.
-- **Current deploy mechanism mismatch.** The live WAR we found was
-  stored under WildFly's content-addressed store
-  (`standalone/data/content/`), which is what both the scanner *and*
-  the management CLI produce — so this doesn't rule out either, but it
-  also doesn't confirm the scanner path hasn't been disabled in favour
-  of CLI-only deploys. Worth a quick check:
-  `grep -A3 deployment-scanner /opt/wildfly/wildfly-26.1.1.Final/standalone/configuration/standalone.xml`
 - **Apache symlink following.** The vhost's `DocumentRoot` is
   `/app/webapp/symphony-fe`, which the scripts assume is (or will
   become) a symlink. Confirm Apache's `Options` for that path allow
