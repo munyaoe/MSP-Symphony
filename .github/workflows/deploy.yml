@@ -1,0 +1,117 @@
+name: Deploy to production
+
+# Manual-only. Builds nairobi-convention fresh, ships it to a new
+# timestamped release directory on the server, deploys it, smoke-tests
+# it, and automatically rolls back on failure.
+#
+# Requires (set these up before the first real run - see DEPLOYMENT.md):
+#   - A GitHub Environment named "production" with required reviewers,
+#     so this needs a second person's approval to actually run.
+#   - Repository secrets: DEPLOY_SSH_HOST, DEPLOY_SSH_PORT, DEPLOY_SSH_USER,
+#     DEPLOY_SSH_KEY (private key), DEPLOY_SSH_KNOWN_HOSTS (output of
+#     `ssh-keyscan -p <port> <host>` run once, trusted out of band).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DEPLOY to confirm you want to deploy to the live site'
+        required: true
+
+jobs:
+  deploy:
+    if: ${{ github.event.inputs.confirm == 'DEPLOY' }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build backend WAR
+        working-directory: ./symphony-ws
+        run: mvn -B package --file pom.xml -Pskip-apitests
+
+      - name: Use Node.js 22.13.0
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.13.0
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: |
+          npm ci
+          npx ng build --configuration production
+
+      - name: Assemble release
+        id: release
+        run: |
+          STAMP=$(date -u +%Y%m%d%H%M%S)
+          echo "stamp=$STAMP" >> "$GITHUB_OUTPUT"
+          mkdir -p "release/$STAMP/backend" "release/$STAMP/frontend"
+          cp symphony-ws/target/*.war "release/$STAMP/backend/"
+          cp -r frontend/dist/symphony-fe/* "release/$STAMP/frontend/"
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Ship release and deploy scripts to server
+        env:
+          STAMP: ${{ steps.release.outputs.stamp }}
+        run: |
+          SSH_OPTS="-i ~/.ssh/deploy_key -p ${{ secrets.DEPLOY_SSH_PORT }}"
+          DEST="${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }}"
+          ssh $SSH_OPTS "$DEST" "mkdir -p /app/releases/$STAMP/backend /app/releases/$STAMP/frontend"
+          rsync -az -e "ssh $SSH_OPTS" "release/$STAMP/backend/" "$DEST:/app/releases/$STAMP/backend/"
+          rsync -az -e "ssh $SSH_OPTS" "release/$STAMP/frontend/" "$DEST:/app/releases/$STAMP/frontend/"
+          rsync -az -e "ssh $SSH_OPTS" deploy/ "$DEST:/app/releases/.deploy-scripts/"
+
+      - name: Run remote deploy
+        id: remote_deploy
+        env:
+          STAMP: ${{ steps.release.outputs.stamp }}
+        run: |
+          SSH_OPTS="-i ~/.ssh/deploy_key -p ${{ secrets.DEPLOY_SSH_PORT }}"
+          DEST="${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }}"
+          ssh $SSH_OPTS "$DEST" "bash /app/releases/.deploy-scripts/remote-deploy.sh /app/releases/$STAMP"
+
+      - name: Smoke test
+        id: smoke
+        run: |
+          set -e
+          BASE=https://symphony.nairobiconvention.org
+          # Site responds
+          curl -fsS -o /dev/null "$BASE/"
+          # Unauthenticated service call returns 401, not 5xx (confirms backend is up and secured)
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/symphony-ws/service/areas")
+          [ "$code" = "401" ] || { echo "Expected 401 from /symphony-ws/service/areas, got $code"; exit 1; }
+          # New frontend bundle hash is being served (sanity check it's not stale-cached)
+          curl -fsS "$BASE/" | grep -q 'main\.' || { echo "No main.*.js reference in index.html"; exit 1; }
+
+      - name: Roll back on failure
+        if: failure() && steps.remote_deploy.outcome != 'skipped'
+        run: |
+          SSH_OPTS="-i ~/.ssh/deploy_key -p ${{ secrets.DEPLOY_SSH_PORT }}"
+          DEST="${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }}"
+          ssh $SSH_OPTS "$DEST" "bash /app/releases/.deploy-scripts/remote-rollback.sh"
+
+      - name: Prune old releases (keep last 5)
+        if: success()
+        run: |
+          SSH_OPTS="-i ~/.ssh/deploy_key -p ${{ secrets.DEPLOY_SSH_PORT }}"
+          DEST="${{ secrets.DEPLOY_SSH_USER }}@${{ secrets.DEPLOY_SSH_HOST }}"
+          ssh $SSH_OPTS "$DEST" '
+            cd /app/releases
+            ls -1dt */ 2>/dev/null | grep -E "^[0-9]{14}/$" | tail -n +6 | xargs -r rm -rf
+          '
