@@ -15,7 +15,7 @@
 set -euo pipefail
 
 RELEASE_DIR="${1:?Usage: remote-deploy.sh <release-dir-absolute-path>}"
-JBOSS_CLI=/opt/wildfly/wildfly-26.1.1.Final/bin/jboss-cli.sh
+JBOSS_CLI=/opt/wildfly/wildfly-33.0.2.Final/bin/jboss-cli.sh
 FRONTEND_LINK=/app/webapp/symphony-fe
 DEPLOY_NAME=symphony-ws.war
 
