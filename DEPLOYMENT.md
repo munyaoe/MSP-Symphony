@@ -13,7 +13,10 @@ previous release is never deleted until 5 newer ones exist, so rollback
 is just restoring the previous symlink target and redeploying the
 previous WAR.
 
-**Nothing in this pipeline has been run yet.** It is here for review.
+The server now runs **WildFly 33.0.2.Final** (upgraded from 26.1.1.Final
+on 2026-11-12 to support Jakarta EE10, which the backend has required
+since commit `eb337c6`). See "WildFly 26 → 33 upgrade" below for what
+changed and why.
 
 ## One-time setup required before the first real run
 
@@ -61,6 +64,57 @@ previous WAR.
   was left registered in a `FAILED` state (harmless, not serving
   anything) — clean it up once before the next deploy attempt:
   `jboss-cli.sh --connect --command="undeploy symphony-ws.war"`
+
+## WildFly 26 → 33 upgrade (2026-11-12)
+
+The backend moved to Jakarta EE10 (commit `eb337c6`, bundling Hibernate
+6.6.7) but the server was still on WildFly 26.1.1, which only supports
+Hibernate 5.3 — deploys failed with `NoSuchMethodError` on
+`TypeContributions.contributeType`. Fix was a full WildFly upgrade, done
+side-by-side with zero risk to the running instance until actual cutover:
+
+- Installed WildFly 33.0.2.Final to `/opt/wildfly/wildfly-33.0.2.Final`
+  (Jakarta EE10, last version before mainline moved to EE11). The old
+  `wildfly-26.1.1.Final` install is left completely untouched for
+  instant rollback — just flip `ExecStart` in
+  `/usr/lib/systemd/system/wildfly.service` back to it and restart.
+- `/opt/wildfly/wildfly-26.1.1.Final/bin/launch.sh` is a **custom
+  wrapper**, not part of stock WildFly — it hardcodes `WILDFLY_HOME`
+  and binds the management interface to `0.0.0.0`. Any future install
+  needs this copied over and its path updated, or `systemd` fails with
+  `203/EXEC`.
+- `bin/standalone.conf`'s `JBOSS_JAVA_SIZING` defaults to `-Xmx512m` —
+  must be set to `-Xms64m -Xmx13G -XX:MetaspaceSize=96M
+  -XX:MaxMetaspaceSize=768m` to match production sizing, or the app
+  will be heap-starved under real load.
+- The PostgreSQL JDBC driver is a **managed deployment**, not a static
+  module (`postgresql-42.7.5.jar`, matching the bumped `pom.xml`
+  version) — deployed via `jboss-cli`, same mechanism as the app WAR.
+- **Login requires manually recreating the `WIO-SymphonyIdentity`
+  filesystem-realm.** The actual identity data lives in
+  `standalone/configuration/symphony-localid/` and must be copied
+  byte-for-byte from the old install — it's real user accounts, not
+  regeneratable config. The realm, decoder, and domain wiring were
+  added via `jboss-cli` (`simple-role-decoder`, `filesystem-realm`,
+  and critically: despite `jboss-web.xml` declaring
+  `<security-domain>other</security-domain>`, the login servlet
+  mechanism that's *actually* resolved at runtime is
+  **`ApplicationDomain`** — confirmed via `TRACE`-level
+  `org.wildfly.security` logging showing `realm name: [ApplicationRealm]`
+  during a failed login. The fix was repointing `ApplicationDomain`'s
+  `default-realm` to `WIO-SymphonyIdentity`, not configuring `other`
+  (which was a dead end — don't repeat that path).
+- **One DB migration was required**: `BaselineVersion` gained a
+  `bver_title` column (commit `2515018`, SYM-700) with no accompanying
+  migration script (this app does not use Hibernate's `hbm2ddl.auto` —
+  schema changes are always manual). Applied:
+  `ALTER TABLE symphony.baselineversion ADD COLUMN bver_title text;`
+  (nullable, matching the sibling `bver_desc` column's type). If future
+  entity changes are made upstream, diff
+  `symphony-ws/src/main/java/se/havochvatten/symphony/entity/` against
+  what's live and check for new `@Column`s before deploying.
+- `deploy/remote-deploy.sh` and `deploy/remote-rollback.sh`'s
+  `JBOSS_CLI` constant now point at `wildfly-33.0.2.Final`.
 
 ## Open questions to verify before the first real deploy
 
